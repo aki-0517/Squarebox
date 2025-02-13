@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+:root {
+  /* Dark theme base colors */
+  --color-background: #0d0d0d; 
+  --color-surface: #1a1a1a;
+  --color-surface-alt: #222222;
+  --color-text-primary: #e0e0e0; 
+  --color-text-secondary: #a0a0a0; 
+
+  /* Vibrant accent colors */
+  --color-primary: #707070; /* Electric Violet */
+  --color-secondary: #00d4ff; /* Electric Blue */
+  --color-accent: #ff007f; /* Neon Pink */
+  --color-success: #00ff7f; /* Neon Green */
+  --color-warning: #ff9800; /* Amber Orange */
+  --color-error: #ff1744; /* Bright Red */
+
+  /* Interactive state colors */
+  --color-hover: rgba(255, 255, 255, 0.15);
+  --color-active: rgba(255, 255, 255, 0.25);
+
+  /* Smooth transitions */
+  --transition-speed: 0.3s;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  justify-content: center;
+  background-color: var(--color-background);
+  color: var(--color-text-primary);
+  font-family: "Inter", sans-serif;
+  min-width: 320px;
+  min-height: 100vh;
+  transition: background-color var(--transition-speed), color var(--transition-speed);
+}
+
+/* Scrollbar customization */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-surface-alt);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-secondary);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary);
+}
+
+/* Links */
+a {
+  font-weight: 600;
+  color: var(--color-secondary);
+  transition: color var(--transition-speed);
+}
+a:hover {
+  color: var(--color-primary);
+}
+
+/* Headings */
+h1 {
+  font-size: 3.2em;
+  font-weight: bold;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--color-primary);
+}
+
+/* Buttons */
+button {
+  border-radius: 8px;
+  border: 2px solid transparent;
+  padding: 0.6em 1.4em;
+  font-size: 1em;
+  font-weight: 600;
+  font-family: inherit;
+  background: linear-gradient(45deg, var(--color-primary), var(--color-accent));
+  color: white;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease-in-out;
+  box-shadow: 0px 4px 10px rgba(255, 0, 127, 0.3);
+}
+button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0px 6px 15px rgba(255, 0, 127, 0.5);
+}
+button:focus,
+button:focus-visible {
+  outline: 3px solid var(--color-secondary);
+}
+
+/* Light mode */
+@media (prefers-color-scheme: light) {
+  :root {
+    --color-background: #ffffff;
+    --color-text-primary: #1a1a1a;
+    --color-text-secondary: #4a4a4a;
+    --color-surface: #f5f5f5;
+    --color-surface-alt: #e0e0e0;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text-primary);
+  }
+
+  a {
+    color: var(--color-primary);
+  }
+  a:hover {
+    color: var(--color-accent);
+  }
+  
+  button {
+    background: var(--color-primary);
+    color: white;
+  }
+}
