@@ -1,0 +1,19 @@
+services:
+  searxng:
+    image: searxng/searxng
+    container_name: searxng
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  fastapi-app:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      - searxng 
+    env_file:
+      - ../.env
+    volumes:
+      - .:/app
+    restart: unless-stopped

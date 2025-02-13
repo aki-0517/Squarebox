@@ -4,16 +4,15 @@ from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 from typing import List, Optional, AsyncGenerator
 import httpx
-from langchain_openai import ChatOpenAI
-from langchain.schema import HumanMessage, SystemMessage
 import os
 import json
+import re  
 
-# Environment variable configuration
+# Environment variable configuration for Gemini
 class Settings(BaseSettings):
     searxng_url: str = os.getenv("SEARXNG_URL", "http://localhost:8080/search")
-    deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY")
-    deepseek_base_url: str = os.getenv("DEEPSEEK_BASE_URL")
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY")
+    gemini_base_url: str = os.getenv("GEMINI_BASE_URL")
 
 settings = Settings()
 
@@ -26,12 +25,10 @@ class Message(BaseModel):
 
 class ChatCompletionRequest(BaseModel):
     messages: List[Message]
-    model: str = "deepseek-ai/DeepSeek-V3"
     max_tokens: Optional[int] = 2048
     temperature: Optional[float] = 0.7
-    stream: Optional[bool] = False  # Add streaming support
+    stream: Optional[bool] = False 
 
-# SearXNG search handler
 async def search_searxng(query: str) -> str:
     try:
         async with httpx.AsyncClient() as client:
@@ -41,27 +38,38 @@ async def search_searxng(query: str) -> str:
             )
             response.raise_for_status()
             results = response.json().get("results", [])
+            top_results = results[:3]
             return "\n\n".join([
                 f"{result.get('title', '')}\n{result.get('content', result.get('snippet', ''))}"
-                for result in results
+                for result in top_results
             ])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
-# Use LLM to determine if a search is needed
 async def should_search(user_message: str) -> bool:
-    llm = ChatOpenAI(
-        api_key=settings.deepseek_api_key,
-        base_url=settings.deepseek_base_url,
-        model="deepseek-ai/DeepSeek-V3",
-        temperature=0.2  # Low temperature for stable judgment
-    )
-    prompt = SystemMessage(content="You are an AI assistant responsible for determining whether a user's question requires an internet search. Respond with only 'yes' or 'no'.")
-    user_prompt = HumanMessage(content=f"Question: {user_message}")
-    response = await llm.agenerate([[prompt, user_prompt]])
-    return response.generations[0][0].text.strip().lower() == "yes"
+    headers = {
+        "Content-Type": "application/json"
+    }
+    params = {
+        "key": settings.gemini_api_key  
+    }
+    data = {
+        "contents": [{
+            "parts": [{
+                "text": f"Question: {user_message}. Respond only 'yes' or 'no'."
+            }]}
+        ]
+    }
 
-# OpenAI-compatible streaming response format
+    async with httpx.AsyncClient() as client:
+        response = await client.post(settings.gemini_base_url, json=data, headers=headers, params=params)
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=f"API Error: {response.text}")
+        
+        result = response.json()
+        answer = result["candidates"][0]["content"]["parts"][0]["text"].strip().lower()
+        return answer == "yes"
+
 async def format_stream_response(content_stream: AsyncGenerator[str, None]) -> StreamingResponse:
     async def generator():
         async for chunk in content_stream:
@@ -84,7 +92,6 @@ async def format_stream_response(content_stream: AsyncGenerator[str, None]) -> S
         }
     )
 
-# Non-streaming response format
 def format_response(content: str) -> dict:
     return {
         "object": "chat.completion",
@@ -96,64 +103,125 @@ def format_response(content: str) -> dict:
         }]
     }
 
+async def generate_response(user_message: str, context: str, max_tokens: int, temperature: float) -> str:
+    headers = {
+        "Content-Type": "application/json"
+    }
+    params = {
+        "key": settings.gemini_api_key
+    }
+    prompt = (
+        "You are a helpful AI assistant. "
+        "Answer the user's question based on the following context.\n\n"
+        "【Search Context】\n"
+        f"{context}\n\n"
+        f"Question: {user_message}"
+    )
+    
+    data = {
+        "contents": [{
+            "parts": [{
+                "text": prompt
+            }]}
+        ],
+        "generationConfig": {
+            "max_output_tokens": max_tokens,
+            "temperature": temperature
+        }
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(settings.gemini_base_url, json=data, headers=headers, params=params)
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=f"API Error: {response.text}")
+
+        result = response.json()
+        return result["candidates"][0]["content"]["parts"][0]["text"]
+
 @app.post("/v1/chat/completions")
 async def chat_completion(request: ChatCompletionRequest):
-    # Extract user message
     user_message = next(
-        (msg.content for msg in request.messages if msg.role == "user"), 
+        (msg.content for msg in request.messages if msg.role == "user"),
         None
     )
     if not user_message:
         raise HTTPException(status_code=400, detail="No user message found")
 
-    # Use LLM to determine if a search is needed
-    context = ""
-    if await should_search(user_message):
+    # ---- 「投資アドバイスをトークン一覧に対して求めている」かどうかを判定 ----
+    # ここでは単純に "I want investment advice for the following tokens:" という文字列を利用
+    # 正規表現でトークン名を抽出
+    pattern = r"investment advice for the following tokens:\s*(.*)"
+    match = re.search(pattern, user_message, re.IGNORECASE)
+
+    if match:
+        # カンマ区切りなどでトークン名を抽出
+        tokens_str = match.group(1)
+        tokens = [t.strip() for t in tokens_str.split(",") if t.strip()]
+
+        # SearXNG 検索結果をまとめる
+        combined_context = ""
+        for token in tokens:
+            # "価格トレンド"などを調べたい場合はクエリを工夫
+            query = f"{token} price trend"
+            search_result = await search_searxng(query)
+            combined_context += f"--- Trend search for {token} ---\n{search_result}\n\n"
+
+        # Geminiに投げる
         try:
-            context = await search_searxng(user_message)
-        except Exception as e:
+            # 投資アドバイス用の追加プロンプトに変更しても良い
+            # （ここではユーザーメッセージはそのまま利用）
+            response_text = await generate_response(user_message, combined_context, request.max_tokens, request.temperature)
             if request.stream:
-                async def error_stream():
-                    yield f"Failed to perform a web search. Attempting to answer directly."
-                return await format_stream_response(error_stream())
+                # ストリーミング返却
+                async def content_generator():
+                    for chunk in response_text.split(" "):
+                        yield chunk + " "
+                return await format_stream_response(content_generator())
             else:
-                return format_response(f"Failed to perform a web search. Attempting to answer directly. Error: {str(e)}")
+                return format_response(response_text)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Model service error (investment advice mode): {str(e)}"
+            )
+    else:
+        # 通常のフロー
+        # 検索が必要かどうか LLM で判断
+        do_search = False
+        try:
+            do_search = await should_search(user_message)
+        except Exception as e:
+            # 検索判定失敗時はそのまま回答
+            pass
 
-    # Construct the prompt
-    prompt = SystemMessage(content="You are a helpful AI assistant. Answer the user's question based on the following context.") 
-    if context:
-        prompt.content += f"\n\n【Search Context】\n{context}"
-    user_prompt = HumanMessage(content=f"Question: {user_message}")
+        context = ""
+        if do_search:
+            try:
+                context = await search_searxng(user_message)
+            except Exception as e:
+                if request.stream:
+                    async def error_stream():
+                        yield "Failed to perform a web search. Attempting to answer directly."
+                    return await format_stream_response(error_stream())
+                else:
+                    return format_response(f"Failed to perform a web search. Attempting to answer directly. Error: {str(e)}")
 
-    # Call the LLM to generate a response
-    try:
-        llm = ChatOpenAI(
-            api_key=settings.deepseek_api_key,
-            base_url=settings.deepseek_base_url,
-            model=request.model,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            streaming=request.stream  # Enable streaming if requested
-        )
-
-        if request.stream:
-            async def content_generator():
-                async for chunk in llm.astream([prompt, user_prompt]):
-                    if isinstance(chunk.content, str):
-                        yield chunk.content
-                    else:
-                        yield str(chunk.content)
-
-            return await format_stream_response(content_generator())
-        else:
-            # Non-streaming response
-            response = await llm.agenerate([[prompt, user_prompt]])
-            return format_response(response.generations[0][0].text)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Model service error: {str(e)}"
-        )
+        # Gemini の API を呼び出して回答を生成
+        try:
+            if request.stream:
+                async def content_generator():
+                    response = await generate_response(user_message, context, request.max_tokens, request.temperature)
+                    for chunk in response.split(" "):  # ストリーミング用に単語ごとに分割
+                        yield chunk + " "
+                return await format_stream_response(content_generator())
+            else:
+                response = await generate_response(user_message, context, request.max_tokens, request.temperature)
+                return format_response(response)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Model service error: {str(e)}"
+            )
 
 if __name__ == "__main__":
     import uvicorn

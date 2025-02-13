@@ -46,13 +46,21 @@ export default function Chat() {
       setIsTyping(true);
 
       setTimeout(() => {
-        setMessages(prev => [...prev, { id: Date.now(), content: "Wallet address detected. Fetching portfolio data...", role: 'assistant' }]);
+        setMessages(prev => [...prev, {
+          id: Date.now(),
+          content: "Wallet address detected. Fetching portfolio data...",
+          role: 'assistant'
+        }]);
       }, 1000);
-      
+
       return;
     } else if (message.startsWith('0x')) {
       // Looks like a wallet address but invalid
-      setMessages(prev => [...prev, { id: Date.now(), content: "Invalid wallet address. Please enter a valid address.", role: 'assistant' }]);
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        content: "Invalid wallet address. Please enter a valid address.",
+        role: 'assistant'
+      }]);
       return;
     }
 
@@ -60,37 +68,103 @@ export default function Chat() {
     setIsTyping(true);
     setTimeout(() => {
       const aiResponse = getAIResponse(message);
-      setMessages(prev => [...prev, { id: Date.now(), content: aiResponse, role: 'assistant' }]);
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        content: aiResponse,
+        role: 'assistant'
+      }]);
       setIsTyping(false);
     }, 1000);
   };
 
-  // Add portfolio data when available
+  // ---- 投資アドバイス用のAPIを叩く関数を追加 ----
+  const fetchInvestmentAdvice = async (tokens) => {
+    try {
+      // サーバーに投資アドバイス用のリクエストを投げる
+      // （/v1/chat/completions のエンドポイントを利用）
+      const userMessage = `I want investment advice for the following tokens: ${tokens.join(', ')}`;
+      const response = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: userMessage }],
+          max_tokens: 1024,
+          temperature: 0.7,
+          stream: false
+        })
+      });
+      const data = await response.json();
+
+      // OpenAI互換形式として返ってきた場合、内容を取り出す
+      const advice = data?.choices?.[0]?.message?.content;
+      return advice || "No advice was returned.";
+    } catch (err) {
+      console.error("Error fetching investment advice:", err);
+      return "Error fetching investment advice.";
+    }
+  };
+
+  // ポートフォリオデータが更新されたらメッセージを追加する
   useEffect(() => {
     if (portfolio && !isLoading && !error) {
       setIsTyping(true);
 
-      setTimeout(() => {
-        setMessages(prev => [...prev, { id: Date.now(), content: `Portfolio data retrieved.`, role: 'assistant' }]);
+      // まずは通常のポートフォリオ取得メッセージ
+      setTimeout(async () => {
+        setMessages(prev => [
+          ...prev,
+          { id: Date.now(), content: `Portfolio data retrieved.`, role: 'assistant' }
+        ]);
 
         if (portfolio.erc20.length > 0) {
           setMessages(prev => [
             ...prev,
-            { id: Date.now(), content: `ERC-20 Tokens: ${portfolio.erc20.join(', ')}`, role: 'assistant' }
+            {
+              id: Date.now(),
+              content: `ERC-20 Tokens: ${portfolio.erc20.join(', ')}`,
+              role: 'assistant'
+            }
           ]);
         }
 
         if (portfolio.erc721.length > 0) {
           setMessages(prev => [
             ...prev,
-            { id: Date.now(), content: `ERC-721 NFTs: ${portfolio.erc721.join(', ')}`, role: 'assistant' }
+            {
+              id: Date.now(),
+              content: `ERC-721 NFTs: ${portfolio.erc721.join(', ')}`,
+              role: 'assistant'
+            }
           ]);
         }
 
         if (portfolio.erc1155.length > 0) {
           setMessages(prev => [
             ...prev,
-            { id: Date.now(), content: `ERC-1155 Tokens: ${portfolio.erc1155.join(', ')}`, role: 'assistant' }
+            {
+              id: Date.now(),
+              content: `ERC-1155 Tokens: ${portfolio.erc1155.join(', ')}`,
+              role: 'assistant'
+            }
+          ]);
+        }
+
+        // ---- 投資アドバイスをまとめて取得する ----
+        const allTokens = [
+          ...portfolio.erc20,
+          ...portfolio.erc721,
+          ...portfolio.erc1155
+        ];
+
+        if (allTokens.length > 0) {
+          const advice = await fetchInvestmentAdvice(allTokens);
+          setMessages(prev => [
+            ...prev,
+            {
+              id: Date.now(),
+              content: advice,
+              role: 'assistant'
+            }
           ]);
         }
 
@@ -102,7 +176,10 @@ export default function Chat() {
   // Handle API error
   useEffect(() => {
     if (error) {
-      setMessages(prev => [...prev, { id: Date.now(), content: "Failed to fetch portfolio data. Please try again.", role: 'assistant' }]);
+      setMessages(prev => [
+        ...prev,
+        { id: Date.now(), content: "Failed to fetch portfolio data. Please try again.", role: 'assistant' }
+      ]);
       setIsTyping(false);
     }
   }, [error]);
