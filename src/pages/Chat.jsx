@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useTokenTransfers } from '../hooks/useTokenTransfers';
 import { ethers } from 'ethers';  // Wallet address validation
 import MainLayout from '../components/layout/MainLayout';
-import ChatHistory from '../components/chat/ChatHistory';
 import ChatInput from '../components/chat/ChatInput';
 import TypingIndicator from '../components/chat/TypingIndicator';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,10 +12,11 @@ export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
   const [walletAddress, setWalletAddress] = useState('');
-  
-  // Custom hook for fetching portfolio data
+
+  // カスタムフックからポートフォリオ情報を取得
   const { data: portfolio, error, isLoading } = useTokenTransfers(walletAddress);
 
+  // モックのAIレスポンス（デモ用）
   const mockAIResponses = {
     hello: "Hello! How can I assist you today?",
     default: "I see. Could you tell me more about that?",
@@ -45,24 +45,25 @@ export default function Chat() {
     console.log('Handling new message:', message);
     setMessages(prev => [...prev, { id: uuidv4(), content: message, role: 'user' }]);
 
-    // Validate wallet address
+    // ウォレットアドレスかどうかを検証
     if (ethers.utils.isAddress(message)) {
       console.log('Valid wallet address detected:', message);
-      setWalletAddress(message); // Set wallet address if valid
+      setWalletAddress(message); // 有効なウォレットアドレスとしてセット
       setIsTyping(true);
 
-      setTimeout(() => {
-        setMessages(prev => [...prev, {
-          id: uuidv4(),
-          content: "Wallet address detected. Fetching portfolio data...",
-          role: 'assistant'
-        }]);
-      }, 1000);
+      // setTimeout(() => {
+      //   setMessages(prev => [...prev, {
+      //     id: uuidv4(),
+      //     content: "Wallet address detected. Fetching portfolio data...",
+      //     role: 'assistant'
+      //   }]);
+      //   setIsTyping(false);
+      // }, 1000);
 
       return;
     } else if (message.startsWith('0x')) {
+      // 先頭が"0x"だが不正なアドレスの場合
       console.log('Invalid wallet address detected:', message);
-      // Looks like a wallet address but invalid
       setMessages(prev => [...prev, {
         id: uuidv4(),
         content: "Invalid wallet address. Please enter a valid address.",
@@ -71,7 +72,7 @@ export default function Chat() {
       return;
     }
 
-    // Default AI response
+    // 通常のAIレスポンス
     setIsTyping(true);
     setTimeout(() => {
       const aiResponse = getAIResponse(message);
@@ -119,22 +120,20 @@ export default function Chat() {
     }
   };
 
-  // Portfolio data update effect
+  // ポートフォリオデータ取得完了後の処理
   useEffect(() => {
     console.log('Portfolio data updated:', { portfolio, isLoading, error });
-    
+
     if (portfolio && !isLoading && !error) {
       setIsTyping(true);
 
       setTimeout(async () => {
-        console.log('Processing portfolio data');
-        setMessages(prev => [
-          ...prev,
-          { id: uuidv4(), content: `Portfolio data retrieved.`, role: 'assistant' }
-        ]);
+        // setMessages(prev => [
+        //   ...prev,
+        //   { id: uuidv4(), content: `Portfolio data retrieved.`, role: 'assistant' }
+        // ]);
 
         if (portfolio.erc20.length > 0) {
-          console.log('ERC-20 tokens found:', portfolio.erc20);
           setMessages(prev => [
             ...prev,
             {
@@ -146,7 +145,6 @@ export default function Chat() {
         }
 
         if (portfolio.erc721.length > 0) {
-          console.log('ERC-721 NFTs found:', portfolio.erc721);
           setMessages(prev => [
             ...prev,
             {
@@ -158,7 +156,6 @@ export default function Chat() {
         }
 
         if (portfolio.erc1155.length > 0) {
-          console.log('ERC-1155 tokens found:', portfolio.erc1155);
           setMessages(prev => [
             ...prev,
             {
@@ -175,11 +172,8 @@ export default function Chat() {
           ...portfolio.erc1155
         ];
 
-        console.log('Combined token list:', allTokens);
-
         if (allTokens.length > 0) {
           const advice = await fetchInvestmentAdvice(allTokens);
-          console.log('Investment advice received:', advice);
           setMessages(prev => [
             ...prev,
             {
@@ -189,13 +183,12 @@ export default function Chat() {
             }
           ]);
         }
-
         setIsTyping(false);
       }, 1500);
     }
   }, [portfolio, isLoading, error]);
 
-  // Error handling effect
+  // エラー時の処理
   useEffect(() => {
     if (error) {
       console.error('Portfolio data fetch error:', error);
@@ -211,16 +204,58 @@ export default function Chat() {
 
   return (
     <MainLayout>
-      <div className="flex flex-col h-[90vh] max-w-3xl w-full mx-auto bg-white shadow-lg rounded-lg overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-100">
-          <ChatHistory messages={messages} />
-          {isTyping && <TypingIndicator />}
+      {/* 全体の枠：Chrome風のヘッダー + 検索結果表示エリア */}
+      <div className="w-full flex flex-col h-[90vh] max-w-4xl mx-auto bg-gray-50 shadow-lg rounded-lg overflow-hidden">
+        {/* Chromeのアドレスバー風のヘッダー */}
+        <div className="bg-gray-200 border-b border-gray-300 p-2 items-center space-x-2">
+          {/* 左側にある丸いボタン（戻る・進むボタン風） */}
+          <div className="flex space-x-2 mb-2">
+            <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+            <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+          </div>
+          {/* "検索バー"としてのチャット入力 */}
+          <ChatInput
+            placeholder="Enter wallet address or query..."
+            onSendMessage={handleSendMessage}
+          />
         </div>
 
-        <div className="border-t border-gray-300 bg-white p-4">
-          <ChatInput onSendMessage={handleSendMessage} />
+        {/* メイン表示領域：検索結果表示エリア */}
+        <div className="flex-1 overflow-y-auto p-4 bg-white">
+          {/* タイピングインジケータ */}
+          {isTyping && <TypingIndicator />}
+
+          {/* 検索結果リスト（assistantのメッセージのみ表示すると検索結果っぽくなる） */}
+          <div className="space-y-6">
+            {messages
+              .filter((msg) => msg.role === 'assistant')
+              .map((msg, idx) => (
+                <SearchResultItem key={msg.id} index={idx} content={msg.content} />
+              ))
+            }
+          </div>
         </div>
       </div>
     </MainLayout>
+  );
+}
+
+/**
+ * 検索結果っぽいカードを表示するコンポーネント。
+ * index（表示順）と content（本文）を受け取り、Google検索結果のようなレイアウトを簡易再現。
+ */
+function SearchResultItem({ index, content }) {
+  return (
+    <div className="p-4 bg-white rounded-md shadow-md">
+      <div className="text-sm text-gray-500">検索結果 {index + 1}</div>
+      <a href="#" className="text-blue-600 text-lg hover:underline">
+        Result Title {index + 1}
+      </a>
+      <p className="mt-2 text-gray-700">
+        {content}
+      </p>
+      {/* もしリンク等つけたいならここに<a>要素などを追加 */}
+    </div>
   );
 }

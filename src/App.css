@@ -143,3 +143,19 @@ html, body {
   animation: blink 1.4s infinite;
   animation-delay: 0.4s;
 }
+
+button {
+  border-radius: 4px;
+  border: none;
+  padding: 0.6em 1.4em;
+  font-size: 1em;
+  font-weight: 600;
+  background-color: var(--color-primary);
+  color: white;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+button:hover {
+  background-color: var(--color-secondary);
+}

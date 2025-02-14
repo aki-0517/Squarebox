@@ -31,7 +31,7 @@ body {
   justify-content: center;
   background-color: var(--color-background);
   color: var(--color-text-primary);
-  font-family: "Inter", sans-serif;
+  font-family: 'Roboto', sans-serif;
   min-width: 320px;
   min-height: 100vh;
   transition: background-color var(--transition-speed), color var(--transition-speed);
