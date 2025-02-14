@@ -70,7 +70,12 @@ async def should_search(user_message: str) -> bool:
     data = {
         "contents": [{
             "parts": [{
-                "text": f"Question: {user_message}. Respond only 'yes' or 'no'."
+                "text": f"""
+                Consider the following user query: "{user_message}"
+                Determine if an online search is required to answer this query accurately.
+                If the query involves recent events, specific brand names, obscure entities, or uncommon technical concepts, answer 'yes'.
+                Otherwise, answer 'no'.
+                """
             }]}
         ]
     }
@@ -82,7 +87,7 @@ async def should_search(user_message: str) -> bool:
         
         result = response.json()
         answer = result["candidates"][0]["content"]["parts"][0]["text"].strip().lower()
-        return answer == "yes"
+        return "yes" in answer
 
 async def format_stream_response(content_stream: AsyncGenerator[str, None]) -> StreamingResponse:
     async def generator():
@@ -154,88 +159,40 @@ async def generate_response(user_message: str, context: str, max_tokens: int, te
 
 @app.post("/v1/chat/completions")
 async def chat_completion(request: ChatCompletionRequest):
-    user_message = next(
-        (msg.content for msg in request.messages if msg.role == "user"),
-        None
-    )
-    if not user_message:
-        raise HTTPException(status_code=400, detail="No user message found")
-
-    # ---- 「投資アドバイスをトークン一覧に対して求めている」かどうかを判定 ----
-    # ここでは単純に "I want investment advice for the following tokens:" という文字列を利用
-    # 正規表現でトークン名を抽出
-    pattern = r"investment advice for the following tokens:\s*(.*)"
-    match = re.search(pattern, user_message, re.IGNORECASE)
-
-    if match:
-        # カンマ区切りなどでトークン名を抽出
-        tokens_str = match.group(1)
-        tokens = [t.strip() for t in tokens_str.split(",") if t.strip()]
-
-        # SearXNG 検索結果をまとめる
-        combined_context = ""
-        for token in tokens:
-            # "価格トレンド"などを調べたい場合はクエリを工夫
-            query = f"{token} price trend"
-            search_result = await search_searxng(query)
-            combined_context += f"--- Trend search for {token} ---\n{search_result}\n\n"
-
-        # Geminiに投げる
-        try:
-            # 投資アドバイス用の追加プロンプトに変更しても良い
-            # （ここではユーザーメッセージはそのまま利用）
-            response_text = await generate_response(user_message, combined_context, request.max_tokens, request.temperature)
-            if request.stream:
-                # ストリーミング返却
-                async def content_generator():
-                    for chunk in response_text.split(" "):
-                        yield chunk + " "
-                return await format_stream_response(content_generator())
-            else:
-                return format_response(response_text)
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Model service error (investment advice mode): {str(e)}"
-            )
-    else:
-        # 通常のフロー
-        # 検索が必要かどうか LLM で判断
-        do_search = False
-        try:
-            do_search = await should_search(user_message)
-        except Exception as e:
-            # 検索判定失敗時はそのまま回答
-            pass
-
-        context = ""
-        if do_search:
+    try:
+        user_message = request.messages[-1].content
+        search_results = ""
+        
+        if await should_search(user_message):
             try:
-                context = await search_searxng(user_message)
+                search_results = await search_searxng(user_message)
             except Exception as e:
-                if request.stream:
-                    async def error_stream():
-                        yield "Failed to perform a web search. Attempting to answer directly."
-                    return await format_stream_response(error_stream())
-                else:
-                    return format_response(f"Failed to perform a web search. Attempting to answer directly. Error: {str(e)}")
+                print(f"Search failed: {str(e)}")
+                search_results = "No relevant search results found. Please answer based on general knowledge."
 
-        # Gemini の API を呼び出して回答を生成
-        try:
-            if request.stream:
-                async def content_generator():
-                    response = await generate_response(user_message, context, request.max_tokens, request.temperature)
-                    for chunk in response.split(" "):  # ストリーミング用に単語ごとに分割
-                        yield chunk + " "
-                return await format_stream_response(content_generator())
-            else:
-                response = await generate_response(user_message, context, request.max_tokens, request.temperature)
-                return format_response(response)
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Model service error: {str(e)}"
+        if request.stream:
+            content_stream = generate_response(
+                user_message=user_message,
+                context=search_results,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature
             )
+            return StreamingResponse(
+                format_stream_response(content_stream),
+                media_type="text/event-stream"
+            )
+        else:
+            content = await generate_response(
+                user_message=user_message,
+                context=search_results,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature
+            )
+            return format_response(content)
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

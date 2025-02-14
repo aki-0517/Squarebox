@@ -4,3 +4,4 @@ langchain
 langchain_openai
 pydantic_settings
 uvicorn
+beautifulsoup4

@@ -53,7 +53,7 @@ export default function Chat() {
 
       setTimeout(() => {
         setMessages(prev => [...prev, {
-          id: Date.now(),
+          id: uuidv4(),
           content: "Wallet address detected. Fetching portfolio data...",
           role: 'assistant'
         }]);
@@ -77,7 +77,7 @@ export default function Chat() {
       const aiResponse = getAIResponse(message);
       console.log('AI response generated:', aiResponse);
       setMessages(prev => [...prev, {
-        id: Date.now(),
+        id: uuidv4(),
         content: aiResponse,
         role: 'assistant'
       }]);
@@ -88,7 +88,7 @@ export default function Chat() {
   const fetchInvestmentAdvice = async (tokens) => {
     console.log('Fetching investment advice for tokens:', tokens);
     try {
-      const userMessage = `I want investment advice for the following tokens: ${tokens.join(', ')}`;
+      const userMessage = `I want information for the following tokens: ${tokens.join(', ')}`;
       console.log('Sending request to investment advice API with message:', userMessage);
       
       const response = await fetch('http://localhost:8000/v1/chat/completions', {
