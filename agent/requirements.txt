@@ -5,3 +5,4 @@ langchain_openai
 pydantic_settings
 uvicorn
 beautifulsoup4
+redis

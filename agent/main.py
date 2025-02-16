@@ -7,24 +7,24 @@ from typing import List, Optional, AsyncGenerator
 import httpx
 import os
 import json
-import re  
+import re
+import redis  
 
-# Environment variable configuration for Gemini
+# 環境変数の設定
 class Settings(BaseSettings):
     searxng_url: str = os.getenv("SEARXNG_URL", "http://localhost:8080/search")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY")
     gemini_base_url: str = os.getenv("GEMINI_BASE_URL")
+    redis_host: str = os.getenv("REDIS_HOST", "redis")  
+    redis_port: int = int(os.getenv("REDIS_PORT", 6379))  
 
 settings = Settings()
 
 app = FastAPI()
 
+redis_client = redis.StrictRedis(host=settings.redis_host, port=settings.redis_port, decode_responses=True)
 # CORS 設定
-origins = [
-    "http://localhost:5173"
-]
-
-
+origins = ["http://localhost:5173"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,  
@@ -32,7 +32,8 @@ app.add_middleware(
     allow_methods=["*"],  
     allow_headers=["*"], 
 )
-# Request model (compatible with OpenAI format)
+
+# リクエストモデル
 class Message(BaseModel):
     role: str
     content: str
@@ -42,6 +43,13 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: Optional[int] = 2048
     temperature: Optional[float] = 0.7
     stream: Optional[bool] = False 
+
+async def extract_and_store_tokens(user_message: str):
+    match = re.search(r"I want information for the following tokens: (.+)", user_message)
+    if match:
+        tokens = match.group(1).split(", ")
+        redis_client.set("tokens", json.dumps(tokens))  
+        print(f"Saved tokens to Redis: {tokens}")
 
 async def search_searxng(query: str) -> str:
     try:
@@ -157,10 +165,14 @@ async def generate_response(user_message: str, context: str, max_tokens: int, te
         result = response.json()
         return result["candidates"][0]["content"]["parts"][0]["text"]
 
+# Chat Completion API
 @app.post("/v1/chat/completions")
 async def chat_completion(request: ChatCompletionRequest):
     try:
         user_message = request.messages[-1].content
+
+        extract_and_store_tokens(user_message)
+
         search_results = ""
         
         if await should_search(user_message):
@@ -197,3 +209,18 @@ async def chat_completion(request: ChatCompletionRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+@app.get("/redis/tokens")
+def get_tokens():
+    tokens_data = redis_client.get("tokens")
+    if tokens_data:
+        return {"tokens": json.loads(tokens_data)}
+    return {"error": "No tokens found"}
+
+@app.delete("/redis/tokens")
+def delete_tokens():
+    """Redis に保存された tokens データを削除"""
+    if redis_client.exists("tokens"):
+        redis_client.delete("tokens")
+        return {"message": "Tokens deleted from Redis"}
+    return {"error": "No tokens found in Redis"}

@@ -5,6 +5,7 @@ import MainLayout from '../components/layout/MainLayout';
 import ChatInput from '../components/chat/ChatInput';
 import TypingIndicator from '../components/chat/TypingIndicator';
 import { v4 as uuidv4 } from 'uuid';
+import TagButton from '../components/layout/TagButton';
 
 export default function Chat() {
   console.log('Chat component rendered');
@@ -12,11 +13,35 @@ export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
   const [walletAddress, setWalletAddress] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [trendingWords, setTrendingWords] = useState([]); 
 
-  // カスタムフックからポートフォリオ情報を取得
+
+
+  const fetchTokensFromRedis = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/redis/tokens');
+      if (!response.ok) {
+        console.error("Failed to fetch tokens from Redis:", response.status, response.statusText);
+        return;
+      }
+  
+      const data = await response.json();
+      if (data.tokens && Array.isArray(data.tokens)) {
+        console.log("Tokens from Redis:", data.tokens);
+        setTrendingWords(prev => [...new Set([...prev, ...data.tokens])]); 
+      }
+    } catch (err) {
+      console.error("Error fetching tokens from Redis:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchTokensFromRedis();
+  }, []);
+
   const { data: portfolio, error, isLoading } = useTokenTransfers(walletAddress);
 
-  // モックのAIレスポンス（デモ用）
   const mockAIResponses = {
     hello: "Hello! How can I assist you today?",
     default: "I see. Could you tell me more about that?",
@@ -45,30 +70,24 @@ export default function Chat() {
     console.log('Handling new message:', message);
     setMessages(prev => [...prev, { id: uuidv4(), content: message, role: 'user' }]);
 
-    // ウォレットアドレスかどうかを検証
+    // Clear the search input after sending the message
+    setSearchInput('');
+
     if (ethers.utils.isAddress(message)) {
       console.log('Valid wallet address detected:', message);
-      setWalletAddress(message); // 有効なウォレットアドレスとしてセット
+      setWalletAddress(message); 
       setIsTyping(true);
-
-      // setTimeout(() => {
-      //   setMessages(prev => [...prev, {
-      //     id: uuidv4(),
-      //     content: "Wallet address detected. Fetching portfolio data...",
-      //     role: 'assistant'
-      //   }]);
-      //   setIsTyping(false);
-      // }, 1000);
-
       return;
     } else if (message.startsWith('0x')) {
-      // 先頭が"0x"だが不正なアドレスの場合
       console.log('Invalid wallet address detected:', message);
-      setMessages(prev => [...prev, {
-        id: uuidv4(),
-        content: "Invalid wallet address. Please enter a valid address.",
-        role: 'assistant'
-      }]);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: uuidv4(),
+          content: "Invalid wallet address. Please enter a valid address.",
+          role: 'assistant'
+        }
+      ]);
       return;
     }
 
@@ -77,11 +96,14 @@ export default function Chat() {
     setTimeout(() => {
       const aiResponse = getAIResponse(message);
       console.log('AI response generated:', aiResponse);
-      setMessages(prev => [...prev, {
-        id: uuidv4(),
-        content: aiResponse,
-        role: 'assistant'
-      }]);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: uuidv4(),
+          content: aiResponse,
+          role: 'assistant'
+        }
+      ]);
       setIsTyping(false);
     }, 1000);
   };
@@ -120,7 +142,6 @@ export default function Chat() {
     }
   };
 
-  // ポートフォリオデータ取得完了後の処理
   useEffect(() => {
     console.log('Portfolio data updated:', { portfolio, isLoading, error });
 
@@ -128,11 +149,6 @@ export default function Chat() {
       setIsTyping(true);
 
       setTimeout(async () => {
-        // setMessages(prev => [
-        //   ...prev,
-        //   { id: uuidv4(), content: `Portfolio data retrieved.`, role: 'assistant' }
-        // ]);
-
         if (portfolio.erc20.length > 0) {
           setMessages(prev => [
             ...prev,
@@ -188,7 +204,6 @@ export default function Chat() {
     }
   }, [portfolio, isLoading, error]);
 
-  // エラー時の処理
   useEffect(() => {
     if (error) {
       console.error('Portfolio data fetch error:', error);
@@ -207,7 +222,7 @@ export default function Chat() {
       {/* 全体の枠：Chrome風のヘッダー + 検索結果表示エリア */}
       <div className="w-full flex flex-col h-[90vh] max-w-4xl mx-auto bg-gray-50 shadow-lg rounded-lg overflow-hidden">
         {/* Chromeのアドレスバー風のヘッダー */}
-        <div className="bg-gray-200 border-b border-gray-300 p-2 items-center space-x-2">
+        <div className="bg-gray-200 border-b border-gray-300 p-2">
           {/* 左側にある丸いボタン（戻る・進むボタン風） */}
           <div className="flex space-x-2 mb-2">
             <div className="w-3 h-3 bg-red-500 rounded-full"></div>
@@ -216,9 +231,17 @@ export default function Chat() {
           </div>
           {/* "検索バー"としてのチャット入力 */}
           <ChatInput
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Enter wallet address or query..."
             onSendMessage={handleSendMessage}
           />
+          <div className="flex flex-wrap mt-2 space-x-2">
+  {trendingWords.map((word) => (
+    <TagButton key={word} tag={word} onClick={() => handleTagClick(word)} />
+  ))}
+</div>
+
         </div>
 
         {/* メイン表示領域：検索結果表示エリア */}
@@ -252,10 +275,7 @@ function SearchResultItem({ index, content }) {
       <a href="#" className="text-blue-600 text-lg hover:underline">
         Result Title {index + 1}
       </a>
-      <p className="mt-2 text-gray-700">
-        {content}
-      </p>
-      {/* もしリンク等つけたいならここに<a>要素などを追加 */}
+      <p className="mt-2 text-gray-700">{content}</p>
     </div>
   );
 }
