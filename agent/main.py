@@ -10,6 +10,11 @@ import json
 import re
 import redis  
 
+class SearchResult(BaseModel):
+    title: str
+    content: str
+    url: str
+
 # 環境変数の設定
 class Settings(BaseSettings):
     searxng_url: str = os.getenv("SEARXNG_URL", "http://localhost:8080/search")
@@ -51,8 +56,37 @@ async def extract_and_store_tokens(user_message: str):
         redis_client.set("tokens", json.dumps(tokens))  
         print(f"Saved tokens to Redis: {tokens}")
 
+async def get_tokens_context(user_message: str) -> str:
+    match = re.search(r"I want information for the following tokens: (.+)", user_message)
+    if not match:
+        return ""
+    
+    tokens = match.group(1).split(", ")
+    context_parts = []
+    
+    for token in tokens:
+        search_data = redis_client.get(f"search:{token}")
+        if search_data:
+            results = json.loads(search_data)
+            for result in results:
+                part = (
+                    f"Token: {token}\n"
+                    f"Title: {result.get('title', '')}\n"
+                    f"Content: {result.get('content', '')}\n"
+                    f"URL: {result.get('url', '')}\n"
+                )
+                context_parts.append(part)
+    return "\n".join(context_parts)
+
+
 async def search_searxng(query: str) -> str:
     try:
+        # Redis に保存された検索結果があるかチェック
+        cached_results = redis_client.get(f"search:{query}")
+        if cached_results:
+            print(f"Cache hit for query: {query}")
+            return json.loads(cached_results)
+
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 settings.searxng_url,
@@ -60,11 +94,18 @@ async def search_searxng(query: str) -> str:
             )
             response.raise_for_status()
             results = response.json().get("results", [])
-            top_results = results[:3]
-            return "\n\n".join([
-                f"{result.get('title', '')}\n{result.get('content', result.get('snippet', ''))}"
-                for result in top_results
-            ])
+
+            top_results = [
+                {
+                    "title": result.get("title", ""),
+                    "content": result.get("content", result.get("snippet", "")),
+                    "url": result.get("url", "")
+                }
+                for result in results[:3]
+            ]
+
+            redis_client.setex(f"search:{query}", 3600, json.dumps(top_results))
+            return top_results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
@@ -130,13 +171,32 @@ def format_response(content: str) -> dict:
         }]
     }
 
-async def generate_response(user_message: str, context: str, max_tokens: int, temperature: float) -> str:
+async def generate_response(user_message: str, max_tokens: int, temperature: float) -> str:
     headers = {
         "Content-Type": "application/json"
     }
     params = {
         "key": settings.gemini_api_key
     }
+    
+    # ユーザーのメッセージを query として、/redis/search/{query} エンドポイントから検索結果を取得
+    context = ""
+    async with httpx.AsyncClient() as client:
+        # ※注意: 内部APIを呼ぶ場合、ホスト名やポートが適切か確認してください。
+        redis_url = f"http://localhost:8000/redis/search/{user_message}"
+        redis_response = await client.get(redis_url)
+        if redis_response.status_code == 200:
+            data = redis_response.json()
+            # 検索結果が存在する場合、各項目の内容を整形して context に追加
+            if "results" in data:
+                for item in data["results"]:
+                    context += (
+                        f"Title: {item.get('title', '')}\n"
+                        f"Content: {item.get('content', '')}\n"
+                        f"URL: {item.get('url', '')}\n\n"
+                    )
+    
+    # Gemini に渡すプロンプトを作成
     prompt = (
         "You are a helpful AI assistant. "
         "Answer the user's question based on the following context.\n\n"
@@ -149,8 +209,8 @@ async def generate_response(user_message: str, context: str, max_tokens: int, te
         "contents": [{
             "parts": [{
                 "text": prompt
-            }]}
-        ],
+            }]
+        }],
         "generationConfig": {
             "max_output_tokens": max_tokens,
             "temperature": temperature
@@ -171,16 +231,23 @@ async def chat_completion(request: ChatCompletionRequest):
     try:
         user_message = request.messages[-1].content
 
-        extract_and_store_tokens(user_message)
+        # token情報を保存（非同期関数なのでawaitを追加するのが望ましい場合もあります）
+        await extract_and_store_tokens(user_message)
 
-        search_results = ""
-        
-        if await should_search(user_message):
-            try:
-                search_results = await search_searxng(user_message)
-            except Exception as e:
-                print(f"Search failed: {str(e)}")
-                search_results = "No relevant search results found. Please answer based on general knowledge."
+        # tokenクエリに該当する場合、Redisから全ての検索情報を取得
+        token_context = await get_tokens_context(user_message)
+        if token_context:
+            # Redisから取得したtoken情報をコンテキストとして利用
+            search_results = token_context
+        else:
+            # 通常はGeminiによる検索判定＆検索結果を利用
+            search_results = ""
+            if await should_search(user_message):
+                try:
+                    search_results = await search_searxng(user_message)
+                except Exception as e:
+                    print(f"Search failed: {str(e)}")
+                    search_results = "No relevant search results found. Please answer based on general knowledge."
 
         if request.stream:
             content_stream = generate_response(
@@ -206,6 +273,7 @@ async def chat_completion(request: ChatCompletionRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
@@ -224,3 +292,37 @@ def delete_tokens():
         redis_client.delete("tokens")
         return {"message": "Tokens deleted from Redis"}
     return {"error": "No tokens found in Redis"}
+
+@app.post("/redis/search/{query}")
+def save_search_results(query: str, search_result: SearchResult):
+    search_key = f"search:{query}"
+    
+    # 既存の検索結果を取得
+    existing_data = redis_client.get(search_key)
+    if existing_data:
+        existing_results = json.loads(existing_data)
+    else:
+        existing_results = []
+
+    # 新しい検索結果を追加
+    existing_results.append(search_result.dict())
+
+    # Redis に保存（1時間キャッシュ）
+    redis_client.setex(search_key, 3600, json.dumps(existing_results))
+
+    return {"message": f"Search result added for '{query}'", "updated_results": existing_results}
+
+@app.get("/redis/search/{query}")
+def get_search_results(query: str):
+    search_data = redis_client.get(f"search:{query}")
+    if search_data:
+        return {"query": query, "results": json.loads(search_data)}
+    return {"error": f"No cached results found for {query}"}
+
+@app.delete("/redis/search/{query}")
+def delete_search_cache(query: str):
+    if redis_client.exists(f"search:{query}"):
+        redis_client.delete(f"search:{query}")
+        return {"message": f"Search cache for '{query}' deleted"}
+    return {"error": f"No cache found for query '{query}'"}
+
