@@ -2,31 +2,23 @@
 
 [Demo](https://squarebox-ten.vercel.app/) | [Video]() 
 
-### **Project: Squarebox**  
-
-#### **Overview**  
+## Overview
 Squarebox is an **AI-powered Web3 search engine that tracks and promotes the latest trends in the Sonic ecosystem**.  
 By utilizing AI, it analyzes **keywords and blockchain data** based on user searches and **automatically promotes trending topics on Twitter through agent bots**. This allows users to **easily search for Web3 trends and transaction history** while also **automatically sharing the most discussed keywords and trends**.  
 
 Additionally, Squarebox leverages **Zerebro AI** to **integrate and analyze blockchain and social media data comprehensively**.  
 This enables Web3 users to **track token transactions, newly launched NFTs, and blockchain trends**, providing quick and easy access to the latest developments.  
 
----
-
-### **Problem Statement**  
+## Problem Statement  
 Web3 users face challenges in finding **the latest blockchain trends, NFT launches, and token transaction details** efficiently.  
 - Existing platforms like OpenSea and Etherscan require **manual searching** and lack automated trend analysis and promotion.  
 - There is no service that **automatically provides and promotes the most discussed keywords and trends** from blockchain and Twitter in real time.  
 
----
-
-### **Solution**  
+## Solution
 Squarebox is a **platform that searches, analyzes, and promotes the latest trends in the Sonic ecosystem using Zerebro AI**.  
 It **aggregates and filters user search terms** to analyze **blockchain transaction data and social media trends**, then **automatically promotes them via a Twitter agent bot**.  
 
----
-
-### **Key Features**  
+## Key Features  
 ✅ **AI-Powered Search & Trend Analysis**  
 - **Zerebro AI** matches user search terms with **the latest trends in the Sonic ecosystem**  
 - **Provides real-time, personalized blockchain search results**  
@@ -51,9 +43,7 @@ It **aggregates and filters user search terms** to analyze **blockchain transact
 - **Zerebro autonomously analyzes blockchain and social media data**  
 - **ZerePy open-source framework** allows for quick deployment of custom AI agents  
 
----
-
-### **System Architecture Diagram**  
+## System Architecture Diagram
 ```mermaid
 sequenceDiagram
     participant User
