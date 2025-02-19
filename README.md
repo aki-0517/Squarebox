@@ -43,7 +43,7 @@ It **aggregates and filters user search terms** to analyze **blockchain transact
 - **Zerebro autonomously analyzes blockchain and social media data**  
 - **ZerePy open-source framework** allows for quick deployment of custom AI agents  
 
-## System Architecture Diagram
+## System Architecture
 ```mermaid
 sequenceDiagram
     participant User
@@ -60,4 +60,17 @@ sequenceDiagram
     
     Squarebox->>AI_Agent: Analyze popular search terms and trends
     AI_Agent->>Twitter: Automatically post trending keywords to Twitter
+```
+
+## User Flow
+```mermaid
+graph TD;
+    User -->|Enters Search Query| Squarebox;
+    Squarebox -->|Processes Query with AI Agent| AI_Agent;
+    AI_Agent -->|Retrieves Data from Blockchain| Sonic;
+    AI_Agent -->|Fetches Additional Data| Web3_Sources[NFT Platforms, Transaction APIs];
+    Squarebox -->|Displays Results| User;
+    Squarebox -->|Stores Search Terms| Database;
+    Database -->|Analyzes Trends| AI_Agent;
+    AI_Agent -->|Posts Trending Keywords| Twitter;
 ```
