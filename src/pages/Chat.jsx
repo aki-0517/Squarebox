@@ -271,7 +271,7 @@ export default function Chat() {
 function SearchResultItem({ index, content }) {
   return (
     <div className="p-4 bg-white rounded-md shadow-md">
-      <div className="text-sm text-gray-500">検索結果 {index + 1}</div>
+      <div className="text-sm text-gray-500">Research Result {index + 1}</div>
       <a href="#" className="text-blue-600 text-lg hover:underline">
         Result Title {index + 1}
       </a>

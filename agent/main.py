@@ -27,7 +27,11 @@ settings = Settings()
 
 app = FastAPI()
 
-redis_client = redis.StrictRedis(host=settings.redis_host, port=settings.redis_port, decode_responses=True)
+redis_client = redis.StrictRedis(
+    host=settings.redis_host, 
+    port=settings.redis_port, 
+    decode_responses=True
+)
 # CORS 設定
 origins = ["http://localhost:5173"]
 app.add_middleware(
@@ -47,17 +51,25 @@ class ChatCompletionRequest(BaseModel):
     messages: List[Message]
     max_tokens: Optional[int] = 2048
     temperature: Optional[float] = 0.7
-    stream: Optional[bool] = False 
+    stream: Optional[bool] = False
 
 async def extract_and_store_tokens(user_message: str):
-    match = re.search(r"I want information for the following tokens: (.+)", user_message)
+    """
+    If the user's message includes "I want information for the following tokens: X, Y", 
+    store those tokens in Redis under the key "tokens".
+    """
+    match = re.search(r"I want information for the following tokens:\s*(.+)", user_message)
     if match:
         tokens = match.group(1).split(", ")
         redis_client.set("tokens", json.dumps(tokens))  
         print(f"Saved tokens to Redis: {tokens}")
 
 async def get_tokens_context(user_message: str) -> str:
-    match = re.search(r"I want information for the following tokens: (.+)", user_message)
+    """
+    If the user’s message has a token request, retrieve from Redis all search data for each token.
+    Return that as a concatenated string for AI context.
+    """
+    match = re.search(r"I want information for the following tokens:\s*(.+)", user_message)
     if not match:
         return ""
     
@@ -73,13 +85,15 @@ async def get_tokens_context(user_message: str) -> str:
                     f"Token: {token}\n"
                     f"Title: {result.get('title', '')}\n"
                     f"Content: {result.get('content', '')}\n"
-                    f"URL: {result.get('url', '')}\n"
+                    f"URL: {result.get('url', '')}\n\n"
                 )
                 context_parts.append(part)
     return "\n".join(context_parts)
 
-
 async def search_searxng(query: str) -> str:
+    """
+    Search SearxNG with the user query, cache top 3 results in Redis for 1 hour.
+    """
     try:
         # Redis に保存された検索結果があるかチェック
         cached_results = redis_client.get(f"search:{query}")
@@ -110,6 +124,10 @@ async def search_searxng(query: str) -> str:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 async def should_search(user_message: str) -> bool:
+    """
+    Calls Gemini to determine if a search is needed. 
+    This is bypassed if we already detect tokens & have them in Redis.
+    """
     headers = {
         "Content-Type": "application/json"
     }
@@ -139,6 +157,9 @@ async def should_search(user_message: str) -> bool:
         return "yes" in answer
 
 async def format_stream_response(content_stream: AsyncGenerator[str, None]) -> StreamingResponse:
+    """
+    Converts an async generator of strings into an SSE stream response.
+    """
     async def generator():
         async for chunk in content_stream:
             yield f"data: {json.dumps({
@@ -161,6 +182,9 @@ async def format_stream_response(content_stream: AsyncGenerator[str, None]) -> S
     )
 
 def format_response(content: str) -> dict:
+    """
+    Converts final text content into a Chat Completion-like JSON payload.
+    """
     return {
         "object": "chat.completion",
         "choices": [{
@@ -171,40 +195,33 @@ def format_response(content: str) -> dict:
         }]
     }
 
-async def generate_response(user_message: str, max_tokens: int, temperature: float) -> str:
+async def generate_response(
+    user_message: str, 
+    max_tokens: int, 
+    temperature: float, 
+    context: str = ""
+) -> str:
+    """
+    Sends the combined prompt (which includes context and user message) to Gemini 
+    and returns the best completion from the model.
+    """
     headers = {
         "Content-Type": "application/json"
     }
     params = {
         "key": settings.gemini_api_key
     }
-    
-    # ユーザーのメッセージを query として、/redis/search/{query} エンドポイントから検索結果を取得
-    context = ""
-    async with httpx.AsyncClient() as client:
-        # ※注意: 内部APIを呼ぶ場合、ホスト名やポートが適切か確認してください。
-        redis_url = f"http://localhost:8000/redis/search/{user_message}"
-        redis_response = await client.get(redis_url)
-        if redis_response.status_code == 200:
-            data = redis_response.json()
-            # 検索結果が存在する場合、各項目の内容を整形して context に追加
-            if "results" in data:
-                for item in data["results"]:
-                    context += (
-                        f"Title: {item.get('title', '')}\n"
-                        f"Content: {item.get('content', '')}\n"
-                        f"URL: {item.get('url', '')}\n\n"
-                    )
-    
-    # Gemini に渡すプロンプトを作成
+
+    # Create a prompt that references context + user query
     prompt = (
-        "You are a helpful AI assistant. "
-        "Answer the user's question based on the following context.\n\n"
+        "You are a helpful AI assistant.\n\n"
+        "Below is some context, followed by the user's query.\n"
+        "Please provide a helpful, coherent answer.\n\n"
         "【Search Context】\n"
         f"{context}\n\n"
-        f"Question: {user_message}"
+        f"User's Query: {user_message}"
     )
-    
+
     data = {
         "contents": [{
             "parts": [{
@@ -225,36 +242,82 @@ async def generate_response(user_message: str, max_tokens: int, temperature: flo
         result = response.json()
         return result["candidates"][0]["content"]["parts"][0]["text"]
 
-# Chat Completion API
+# -----------------------------
+#  Chat Completion Main Endpoint
+# -----------------------------
 @app.post("/v1/chat/completions")
 async def chat_completion(request: ChatCompletionRequest):
     try:
         user_message = request.messages[-1].content
-
-        # token情報を保存（非同期関数なのでawaitを追加するのが望ましい場合もあります）
+        
+        # 1) Extract and store tokens if present
         await extract_and_store_tokens(user_message)
-
-        # tokenクエリに該当する場合、Redisから全ての検索情報を取得
+        
+        # 2) Retrieve any token-based context from Redis
         token_context = await get_tokens_context(user_message)
-        if token_context:
-            # Redisから取得したtoken情報をコンテキストとして利用
-            search_results = token_context
-        else:
-            # 通常はGeminiによる検索判定＆検索結果を利用
-            search_results = ""
-            if await should_search(user_message):
-                try:
-                    search_results = await search_searxng(user_message)
-                except Exception as e:
-                    print(f"Search failed: {str(e)}")
-                    search_results = "No relevant search results found. Please answer based on general knowledge."
+        print(f"[DEBUG] Token context: {token_context}")
+
+        # If we found token-based data in Redis, 
+        # we will summarize that data in a user-friendly manner.
+        if token_context.strip():
+            # Create a specialized prompt for summarizing the token context
+            summary_prompt = (
+                "You are a helpful AI assistant.\n\n"
+                "The user wants information about certain tokens. "
+                "Below is the data we have from Redis. "
+                "Please summarize it in a user-friendly manner, highlighting key points.\n\n"
+                f"【Token Search Results】\n{token_context}\n"
+            )
+
+            if request.stream:
+                # Streaming version
+                content_stream = _streaming_summarize(
+                    summary_prompt=summary_prompt,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature
+                )
+                return StreamingResponse(
+                    format_stream_response(content_stream),
+                    media_type="text/event-stream"
+                )
+            else:
+                # Non-stream version
+                summarized_content = await _summarize(
+                    summary_prompt=summary_prompt,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature
+                )
+                return format_response(summarized_content)
+
+        # 3) Otherwise, proceed with the normal logic:
+        #    - Check if we *should* search
+        #    - Possibly do an online search
+        #    - Generate a response based on search results or fallback
+        search_results = ""
+        if await should_search(user_message):
+            try:
+                search_results = await search_searxng(user_message)
+            except Exception as e:
+                print(f"Search failed: {str(e)}")
+                search_results = "No relevant search results found. Please answer based on general knowledge."
+
+        # `search_results` might be a list of dicts. Turn it into a string for Gemini
+        if isinstance(search_results, list):
+            sr_text = ""
+            for r in search_results:
+                sr_text += (
+                    f"Title: {r.get('title', '')}\n"
+                    f"Content: {r.get('content', '')}\n"
+                    f"URL: {r.get('url', '')}\n\n"
+                )
+            search_results = sr_text
 
         if request.stream:
-            content_stream = generate_response(
+            content_stream = _streaming_chat(
                 user_message=user_message,
-                context=search_results,
                 max_tokens=request.max_tokens,
-                temperature=request.temperature
+                temperature=request.temperature,
+                context=search_results
             )
             return StreamingResponse(
                 format_stream_response(content_stream),
@@ -263,21 +326,83 @@ async def chat_completion(request: ChatCompletionRequest):
         else:
             content = await generate_response(
                 user_message=user_message,
-                context=search_results,
                 max_tokens=request.max_tokens,
-                temperature=request.temperature
+                temperature=request.temperature,
+                context=search_results
             )
             return format_response(content)
-            
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# -----------------------------------------------
+# Helper methods for Summaries & Streaming Summaries
+# -----------------------------------------------
+async def _summarize(summary_prompt: str, max_tokens: int, temperature: float) -> str:
+    """
+    Helper that directly calls Gemini to produce a summary based on 'summary_prompt'.
+    """
+    headers = {
+        "Content-Type": "application/json"
+    }
+    params = {
+        "key": settings.gemini_api_key
+    }
+    data = {
+        "contents": [{
+            "parts": [{
+                "text": summary_prompt
+            }]
+        }],
+        "generationConfig": {
+            "max_output_tokens": max_tokens,
+            "temperature": temperature
+        }
+    }
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    async with httpx.AsyncClient() as client:
+        response = await client.post(settings.gemini_base_url, json=data, headers=headers, params=params)
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=f"API Error: {response.text}")
 
+        result = response.json()
+        return result["candidates"][0]["content"]["parts"][0]["text"]
+
+async def _streaming_summarize(summary_prompt: str, max_tokens: int, temperature: float) -> AsyncGenerator[str, None]:
+    """
+    Example streaming approach (pseudo-code) if your Gemini endpoint supports streaming. 
+    If not, you can adapt this to simply yield in chunks or replicate the response in small parts.
+    """
+    # This is a stand-in generator for demonstration.
+    # In practice, you'd call your streaming Gemini API here and yield chunks as they come in.
+    summarized_text = await _summarize(summary_prompt, max_tokens, temperature)
+    # For demonstration, yield it in small chunks:
+    chunk_size = 100
+    for i in range(0, len(summarized_text), chunk_size):
+        yield summarized_text[i:i+chunk_size]
+
+async def _streaming_chat(
+    user_message: str,
+    max_tokens: int,
+    temperature: float,
+    context: str
+) -> AsyncGenerator[str, None]:
+    """
+    Similar approach if you want to streaming-ify normal chat completions.
+    """
+    # We'll just do a single chunk for demonstration
+    complete_answer = await generate_response(
+        user_message=user_message,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        context=context
+    )
+    yield complete_answer
+
+# --------------------
+#  Redis Utility Routes
+# --------------------
 @app.get("/redis/tokens")
 def get_tokens():
     tokens_data = redis_client.get("tokens")
@@ -326,3 +451,6 @@ def delete_search_cache(query: str):
         return {"message": f"Search cache for '{query}' deleted"}
     return {"error": f"No cache found for query '{query}'"}
 
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
