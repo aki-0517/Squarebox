@@ -15,9 +15,8 @@ class SearchResult(BaseModel):
     content: str
     url: str
 
-# 環境変数の設定
+# 環境変数の設定（SearxNG 関連は削除）
 class Settings(BaseSettings):
-    searxng_url: str = os.getenv("SEARXNG_URL", "http://localhost:8080/search")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY")
     gemini_base_url: str = os.getenv("GEMINI_BASE_URL")
     redis_host: str = os.getenv("REDIS_HOST", "redis")  
@@ -32,6 +31,7 @@ redis_client = redis.StrictRedis(
     port=settings.redis_port, 
     decode_responses=True
 )
+
 # CORS 設定
 origins = ["http://localhost:5173"]
 app.add_middleware(
@@ -55,8 +55,8 @@ class ChatCompletionRequest(BaseModel):
 
 async def extract_and_store_tokens(user_message: str):
     """
-    If the user's message includes "I want information for the following tokens: X, Y", 
-    store those tokens in Redis under the key "tokens".
+    ユーザーのメッセージ内に「I want information for the following tokens: X, Y」
+    が含まれていれば、そのトークン情報を Redis の "tokens" キーに保存する。
     """
     match = re.search(r"I want information for the following tokens:\s*(.+)", user_message)
     if match:
@@ -66,8 +66,7 @@ async def extract_and_store_tokens(user_message: str):
 
 async def get_tokens_context(user_message: str) -> str:
     """
-    If the user’s message has a token request, retrieve from Redis all search data for each token.
-    Return that as a concatenated string for AI context.
+    ユーザーのメッセージ内にトークン指定があれば、各トークンに対する Redis 上の検索結果を連結して返す。
     """
     match = re.search(r"I want information for the following tokens:\s*(.+)", user_message)
     if not match:
@@ -90,86 +89,13 @@ async def get_tokens_context(user_message: str) -> str:
                 context_parts.append(part)
     return "\n".join(context_parts)
 
-async def search_searxng(query: str) -> str:
-    """
-    Search SearxNG with the user query, cache top 3 results in Redis for 1 hour.
-    """
-    try:
-        # Redis に保存された検索結果があるかチェック
-        cached_results = redis_client.get(f"search:{query}")
-        if cached_results:
-            print(f"Cache hit for query: {query}")
-            return json.loads(cached_results)
-
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                settings.searxng_url,
-                params={"q": query, "format": "json"}
-            )
-            response.raise_for_status()
-            results = response.json().get("results", [])
-
-            top_results = [
-                {
-                    "title": result.get("title", ""),
-                    "content": result.get("content", result.get("snippet", "")),
-                    "url": result.get("url", "")
-                }
-                for result in results[:3]
-            ]
-
-            redis_client.setex(f"search:{query}", 3600, json.dumps(top_results))
-            return top_results
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
-
-async def should_search(user_message: str) -> bool:
-    """
-    Calls Gemini to determine if a search is needed. 
-    This is bypassed if we already detect tokens & have them in Redis.
-    """
-    headers = {
-        "Content-Type": "application/json"
-    }
-    params = {
-        "key": settings.gemini_api_key  
-    }
-    data = {
-        "contents": [{
-            "parts": [{
-                "text": f"""
-                Consider the following user query: "{user_message}"
-                Determine if an online search is required to answer this query accurately.
-                If the query involves recent events, specific brand names, obscure entities, or uncommon technical concepts, answer 'yes'.
-                Otherwise, answer 'no'.
-                """
-            }]}
-        ]
-    }
-
-    async with httpx.AsyncClient() as client:
-        response = await client.post(settings.gemini_base_url, json=data, headers=headers, params=params)
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=f"API Error: {response.text}")
-        
-        result = response.json()
-        answer = result["candidates"][0]["content"]["parts"][0]["text"].strip().lower()
-        return "yes" in answer
-
 async def format_stream_response(content_stream: AsyncGenerator[str, None]) -> StreamingResponse:
     """
-    Converts an async generator of strings into an SSE stream response.
+    非同期ジェネレータの文字列を SSE ストリームレスポンスに変換する。
     """
     async def generator():
         async for chunk in content_stream:
-            yield f"data: {json.dumps({
-                'object': 'chat.completion.chunk',
-                'choices': [{
-                    'delta': {
-                        'content': chunk
-                    }
-                }]
-            })}\n\n"
+            yield f"data: {json.dumps({'object': 'chat.completion.chunk', 'choices': [{'delta': {'content': chunk}}]})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -183,7 +109,7 @@ async def format_stream_response(content_stream: AsyncGenerator[str, None]) -> S
 
 def format_response(content: str) -> dict:
     """
-    Converts final text content into a Chat Completion-like JSON payload.
+    最終テキストを Chat Completion 風の JSON ペイロードに変換する。
     """
     return {
         "object": "chat.completion",
@@ -202,8 +128,8 @@ async def generate_response(
     context: str = ""
 ) -> str:
     """
-    Sends the combined prompt (which includes context and user message) to Gemini 
-    and returns the best completion from the model.
+    コンテキストとユーザーのクエリを含むプロンプトを Gemini に送信し、
+    補完結果を返す。
     """
     headers = {
         "Content-Type": "application/json"
@@ -212,12 +138,11 @@ async def generate_response(
         "key": settings.gemini_api_key
     }
 
-    # Create a prompt that references context + user query
     prompt = (
         "You are a helpful AI assistant.\n\n"
         "Below is some context, followed by the user's query.\n"
         "Please provide a helpful, coherent answer.\n\n"
-        "【Search Context】\n"
+        "【Context】\n"
         f"{context}\n\n"
         f"User's Query: {user_message}"
     )
@@ -250,27 +175,24 @@ async def chat_completion(request: ChatCompletionRequest):
     try:
         user_message = request.messages[-1].content
         
-        # 1) Extract and store tokens if present
+        # 1) トークン情報の抽出と保存
         await extract_and_store_tokens(user_message)
         
-        # 2) Retrieve any token-based context from Redis
+        # 2) Redis に保存されたトークン関連のコンテキストを取得
         token_context = await get_tokens_context(user_message)
         print(f"[DEBUG] Token context: {token_context}")
 
-        # If we found token-based data in Redis, 
-        # we will summarize that data in a user-friendly manner.
+        # トークンデータがあれば、要約して返す
         if token_context.strip():
-            # Create a specialized prompt for summarizing the token context
             summary_prompt = (
                 "You are a helpful AI assistant.\n\n"
                 "The user wants information about certain tokens. "
                 "Below is the data we have from Redis. "
                 "Please summarize it in a user-friendly manner, highlighting key points.\n\n"
-                f"【Token Search Results】\n{token_context}\n"
+                f"【Token Data】\n{token_context}\n"
             )
 
             if request.stream:
-                # Streaming version
                 content_stream = _streaming_summarize(
                     summary_prompt=summary_prompt,
                     max_tokens=request.max_tokens,
@@ -281,7 +203,6 @@ async def chat_completion(request: ChatCompletionRequest):
                     media_type="text/event-stream"
                 )
             else:
-                # Non-stream version
                 summarized_content = await _summarize(
                     summary_prompt=summary_prompt,
                     max_tokens=request.max_tokens,
@@ -289,28 +210,8 @@ async def chat_completion(request: ChatCompletionRequest):
                 )
                 return format_response(summarized_content)
 
-        # 3) Otherwise, proceed with the normal logic:
-        #    - Check if we *should* search
-        #    - Possibly do an online search
-        #    - Generate a response based on search results or fallback
+        # 3) オンライン検索は行わず、空のコンテキストで Gemini に問い合わせる
         search_results = ""
-        if await should_search(user_message):
-            try:
-                search_results = await search_searxng(user_message)
-            except Exception as e:
-                print(f"Search failed: {str(e)}")
-                search_results = "No relevant search results found. Please answer based on general knowledge."
-
-        # `search_results` might be a list of dicts. Turn it into a string for Gemini
-        if isinstance(search_results, list):
-            sr_text = ""
-            for r in search_results:
-                sr_text += (
-                    f"Title: {r.get('title', '')}\n"
-                    f"Content: {r.get('content', '')}\n"
-                    f"URL: {r.get('url', '')}\n\n"
-                )
-            search_results = sr_text
 
         if request.stream:
             content_stream = _streaming_chat(
@@ -334,15 +235,43 @@ async def chat_completion(request: ChatCompletionRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.post("/v1/chat/completions/static")
+async def chat_completion_static(request: ChatCompletionRequest):
+    try:
+        static_response = (
+            "Information found on HeyAnon. HeyAnon (ANON) is an AI-driven decentralized finance (DeFi) protocol designed to streamline DeFi interactions and consolidate essential project-related information. \n"
+            "MESSARI.IO\n\n"
+            "As of February 19, 2025, ANON is trading at approximately $7.26, with an intraday high of $8.00 and a low of $3.76. The total supply is capped at 21 million tokens, with about 12.74 million currently in circulation, resulting in a market capitalization of approximately $94.52 million.\n\n"
+            "Technical analysis indicates a neutral trend, with key indicators such as moving averages and oscillators not signaling strong buy or sell positions. \n"
+            "TRADINGVIEW.COM\n\n"
+            "Price predictions for ANON vary among analysts. Some forecasts suggest that ANON could reach $10.90 by the end of 2025, potentially climbing to $12.90 in 2026 and $18.07 by 2027. \n"
+            "DIGITALCOINPRICE.COM\n"
+            " Conversely, other analyses project a more conservative outlook, with ANON trading between $2.50 and $3.12 by the end of 2025. \n"
+            "CRYPTOTICKER.IO\n\n"
+            "Investors should consider both the innovative aspects of HeyAnon and the inherent volatility of the cryptocurrency market. Conducting thorough research and staying informed about market trends is essential before making investment decisions."
+        )
+
+        if request.stream:
+            async def static_generator() -> AsyncGenerator[str, None]:
+                chunk_size = 100
+                for i in range(0, len(static_response), chunk_size):
+                    yield static_response[i:i+chunk_size]
+            return StreamingResponse(
+                format_stream_response(static_generator()),
+                media_type="text/event-stream"
+            )
+        else:
+            return format_response(static_response)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # -----------------------------------------------
 # Helper methods for Summaries & Streaming Summaries
 # -----------------------------------------------
 async def _summarize(summary_prompt: str, max_tokens: int, temperature: float) -> str:
-    """
-    Helper that directly calls Gemini to produce a summary based on 'summary_prompt'.
-    """
     headers = {
         "Content-Type": "application/json"
     }
@@ -370,14 +299,7 @@ async def _summarize(summary_prompt: str, max_tokens: int, temperature: float) -
         return result["candidates"][0]["content"]["parts"][0]["text"]
 
 async def _streaming_summarize(summary_prompt: str, max_tokens: int, temperature: float) -> AsyncGenerator[str, None]:
-    """
-    Example streaming approach (pseudo-code) if your Gemini endpoint supports streaming. 
-    If not, you can adapt this to simply yield in chunks or replicate the response in small parts.
-    """
-    # This is a stand-in generator for demonstration.
-    # In practice, you'd call your streaming Gemini API here and yield chunks as they come in.
     summarized_text = await _summarize(summary_prompt, max_tokens, temperature)
-    # For demonstration, yield it in small chunks:
     chunk_size = 100
     for i in range(0, len(summarized_text), chunk_size):
         yield summarized_text[i:i+chunk_size]
@@ -388,10 +310,6 @@ async def _streaming_chat(
     temperature: float,
     context: str
 ) -> AsyncGenerator[str, None]:
-    """
-    Similar approach if you want to streaming-ify normal chat completions.
-    """
-    # We'll just do a single chunk for demonstration
     complete_answer = await generate_response(
         user_message=user_message,
         max_tokens=max_tokens,
@@ -412,7 +330,6 @@ def get_tokens():
 
 @app.delete("/redis/tokens")
 def delete_tokens():
-    """Redis に保存された tokens データを削除"""
     if redis_client.exists("tokens"):
         redis_client.delete("tokens")
         return {"message": "Tokens deleted from Redis"}
@@ -421,20 +338,14 @@ def delete_tokens():
 @app.post("/redis/search/{query}")
 def save_search_results(query: str, search_result: SearchResult):
     search_key = f"search:{query}"
-    
-    # 既存の検索結果を取得
     existing_data = redis_client.get(search_key)
     if existing_data:
         existing_results = json.loads(existing_data)
     else:
         existing_results = []
 
-    # 新しい検索結果を追加
     existing_results.append(search_result.dict())
-
-    # Redis に保存（1時間キャッシュ）
     redis_client.setex(search_key, 3600, json.dumps(existing_results))
-
     return {"message": f"Search result added for '{query}'", "updated_results": existing_results}
 
 @app.get("/redis/search/{query}")

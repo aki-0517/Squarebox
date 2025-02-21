@@ -72,8 +72,9 @@ export default function Chat() {
 
     // Clear the search input after sending the message
     setSearchInput('');
-
-    if (ethers.utils.isAddress(message)) {
+  
+    // ethers v6 の場合
+    if (ethers.isAddress(message)) {
       console.log('Valid wallet address detected:', message);
       setWalletAddress(message); 
       setIsTyping(true);
@@ -90,7 +91,6 @@ export default function Chat() {
       ]);
       return;
     }
-
     // 通常のAIレスポンス
     setIsTyping(true);
     setTimeout(() => {
