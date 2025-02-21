@@ -1,6 +1,6 @@
 # Squarebox
 
-[Demo](https://squarebox-ten.vercel.app/) | [Video]() 
+[Video]() 
 
 ## Overview
 Squarebox is an **AI-powered Web3 search engine that tracks and promotes the latest trends in the Sonic ecosystem**.  
