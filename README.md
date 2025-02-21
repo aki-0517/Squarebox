@@ -1,6 +1,6 @@
 # Squarebox
 
-[Video]() 
+[Video](https://youtu.be/WiRYf0AiFkQ) 
 
 ## Overview
 Squarebox is an **AI-powered Web3 search engine that tracks and promotes the latest trends in the Sonic ecosystem**.  
