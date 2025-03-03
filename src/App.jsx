@@ -1,4 +1,3 @@
-import React from 'react';
 import Chat from './pages/Chat';
 import './App.css';
 import LoginButton from './components/layout/LoginButton';
