@@ -1,76 +1,70 @@
 # Squarebox
 
-[Video](https://youtu.be/WiRYf0AiFkQ) 
+[Video](https://youtu.be/WiRYf0AiFkQ)  
 
-## Overview
-Squarebox is an **AI-powered Web3 search engine that tracks and promotes the latest trends in the Sonic ecosystem**.  
-By utilizing AI, it analyzes **keywords and blockchain data** based on user searches and **automatically promotes trending topics on Twitter through agent bots**. This allows users to **easily search for Web3 trends and transaction history** while also **automatically sharing the most discussed keywords and trends**.  
+## Oveview  
+Squarebox is a search engine platform that utilizes AI agents to analyze and recommend relevant content based on user search queries. Unlike conventional search engines, Squarebox is specifically designed for the Web3 ecosystem, enabling users to search for blockchain-related data, NFTs, and token trends.  
 
-Additionally, Squarebox leverages **Zerebro AI** to **integrate and analyze blockchain and social media data comprehensively**.  
-This enables Web3 users to **track token transactions, newly launched NFTs, and blockchain trends**, providing quick and easy access to the latest developments.  
+Additionally, Squarebox collects and organizes frequently searched keywords, ranking them based on popularity and displaying real-time trending keywords on Twitter through automated AI agent bots. This allows users to gain insights into the most discussed topics within the Sonic ecosystem.  
+
+By integrating various AI and blockchain technologies, Squarebox provides a unique approach to retrieving and visualizing Web3 data efficiently.  
 
 ## Problem Statement  
-Web3 users face challenges in finding **the latest blockchain trends, NFT launches, and token transaction details** efficiently.  
-- Existing platforms like OpenSea and Etherscan require **manual searching** and lack automated trend analysis and promotion.  
-- There is no service that **automatically provides and promotes the most discussed keywords and trends** from blockchain and Twitter in real time.  
+With the rapid expansion of Web3 and blockchain ecosystems, users struggle to find consolidated and relevant information. Searching for blockchain-related content often requires navigating multiple platforms such as OpenSea for NFTs, Etherscan for transaction details, and Twitter for community insights. This fragmented experience creates inefficiencies and slows down decision-making for traders, investors, and enthusiasts.  
 
-## Solution
-Squarebox is a **platform that searches, analyzes, and promotes the latest trends in the Sonic ecosystem using Zerebro AI**.  
-It **aggregates and filters user search terms** to analyze **blockchain transaction data and social media trends**, then **automatically promotes them via a Twitter agent bot**.  
+## Solution  
+Squarebox streamlines Web3 search by integrating AI-powered recommendations, blockchain data aggregation, and Twitter trend analysis. Our platform not only allows users to search for transaction data, NFTs, and tokens, but also provides:  
+- **AI-driven keyword analysis**: Tracks the most popular search terms and trends in real-time.  
+- **Automated Twitter engagement**: Uses AI bots to post trending topics, increasing visibility.  
+- **Aggregated blockchain insights**: Provides transaction history, market listings, and NFT/token-related details from multiple sources.  
+- **Real-time price predictions**: Powered by Allora, Squarebox offers decentralized inference-based price forecasts for searched tokens, assisting users in making informed trading decisions.  
 
-## Key Features  
-✅ **AI-Powered Search & Trend Analysis**  
-- **Zerebro AI** matches user search terms with **the latest trends in the Sonic ecosystem**  
-- **Provides real-time, personalized blockchain search results**  
+By combining AI-driven analysis with blockchain transparency, Squarebox ensures that users get the most relevant and up-to-date information without navigating multiple platforms.  
 
-✅ **Automated Twitter Trend Promotion**  
-- **Tracks the most frequently searched keywords and trends**  
-- **AI-based Twitter agent bot** automatically posts updates  
+## Key Features 
+1. **AI-Powered Search and Trend Analysis**  
+   - Uses Zerebro AI to analyze and rank the latest trends in the Sonic ecosystem.  
+   - Identifies frequently searched keywords and displays trending topics.  
 
-✅ **Blockchain Data & NFT Search**  
-- **Wallet address search** displays **transaction history**  
-- **Recently launched NFTs and tokens** are displayed along with **relevant details**  
+2. **Automated Twitter Promotion**  
+   - AI agent bots post trending search terms and Web3 insights directly on Twitter.  
+   - Helps increase visibility and engagement for trending blockchain topics.  
 
-✅ **Personalized Web3 Insights**  
-- **Automatically collects related Twitter posts based on the tokens in a user’s wallet**  
-- Example: If a user **holds Arbitrum**, Squarebox **displays Arbitrum-related Twitter posts**  
+3. **Blockchain & NFT Data Aggregation**  
+   - Searches wallet addresses, NFT collections, and token transactions in one place.  
+   - Displays where NFTs are listed, their transaction history, and related project details.  
 
-✅ **Sonic Network Integration**  
-- **Optimized search and trend analysis within the Sonic ecosystem**  
-- As a **Sonic Hackathon project**, it provides **the best Web3 data search experience**  
+4. **Personalized Web3 Insights**  
+   - Automatically fetches and displays Twitter posts related to tokens held in the user's wallet.  
+   - Allows users to stay updated on discussions surrounding their digital assets.  
 
-✅ **Powered by Zerebro AI**  
-- **Zerebro autonomously analyzes blockchain and social media data**  
-- **ZerePy open-source framework** allows for quick deployment of custom AI agents  
+5. **Allora-Powered Price Predictions**  
+   - Provides real-time, AI-driven token price predictions for every search query.  
+   - Assists traders with informed decision-making based on decentralized inference.  
 
-## System Architecture
-```mermaid
-sequenceDiagram
-    participant User
-    participant Squarebox
-    participant AI_Agent as Zerebro AI Agent
-    participant Twitter as Twitter Bot
-    participant Blockchain as Blockchain & Web3 API
+## How It Works 
+1. **User Search Input**  
+   - A user enters a query (e.g., wallet address, token, NFT project).  
 
-    User->>Squarebox: Search request (e.g., wallet address, NFT, token)
-    Squarebox->>AI_Agent: Process search request using Zerebro AI
-    AI_Agent->>Blockchain: Fetch transaction and market data
-    AI_Agent->>Squarebox: Return analyzed data
-    Squarebox->>User: Display search results
-    
-    Squarebox->>AI_Agent: Analyze popular search terms and trends
-    AI_Agent->>Twitter: Automatically post trending keywords to Twitter
-```
+2. **AI Processing & Data Collection**  
+   - Squarebox retrieves and organizes blockchain data (transactions, listings, trends).  
+   - Zerebro AI analyzes keywords and related search topics.  
 
-## User Flow
-```mermaid
-graph TD;
-    User -->|Enters Search Query| Squarebox;
-    Squarebox -->|Processes Query with AI Agent| AI_Agent;
-    AI_Agent -->|Retrieves Data from Blockchain| Sonic;
-    AI_Agent -->|Fetches Additional Data| Web3_Sources[NFT Platforms, Transaction APIs];
-    Squarebox -->|Displays Results| User;
-    Squarebox -->|Stores Search Terms| Database;
-    Database -->|Analyzes Trends| AI_Agent;
-    AI_Agent -->|Posts Trending Keywords| Twitter;
-```
+3. **Trend Identification & Twitter Integration**  
+   - Frequently searched terms are ranked and displayed as trending keywords.  
+   - AI bots post trending topics to Twitter automatically.  
+
+4. **Personalized Insights & Predictions**  
+   - The platform displays Twitter posts related to assets in the user’s wallet.  
+   - Allora-powered predictions suggest potential price movements of searched tokens.  
+
+5. **Data Visualization & Search Results**  
+   - The platform presents transaction data, NFT details, and market insights.  
+   - Users can view where an NFT is sold, its price, and past transactions.  
+
+## Project Concept  
+Squarebox is a **Web3 trend search and promotion platform** that analyzes the latest Sonic ecosystem trends and promotes them on Twitter using AI agent bots. It acts as a **real-time insight generator** for blockchain trends, making Web3 data more accessible and actionable for users.  
+
+By integrating Zerebro AI for intelligent recommendations and Allora for decentralized price predictions, Squarebox bridges the gap between blockchain data analysis and automated trend promotion.  
+
+Our goal is to simplify blockchain research, improve information accessibility, and provide valuable trading insights through AI-powered automation.
