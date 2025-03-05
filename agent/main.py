@@ -10,12 +10,14 @@ import json
 import re
 import redis  
 
+
+
 class SearchResult(BaseModel):
     title: str
     content: str
     url: str
 
-# 環境変数の設定（SearxNG 関連は削除）
+# 환경 변수 설정 (SearxNG 관련 삭제됨)
 class Settings(BaseSettings):
     gemini_api_key: str = os.getenv("GEMINI_API_KEY")
     gemini_base_url: str = os.getenv("GEMINI_BASE_URL")
@@ -32,7 +34,7 @@ redis_client = redis.StrictRedis(
     decode_responses=True
 )
 
-# CORS 設定
+# CORS 설정
 origins = ["http://localhost:5173"]
 app.add_middleware(
     CORSMiddleware,
@@ -42,7 +44,7 @@ app.add_middleware(
     allow_headers=["*"], 
 )
 
-# リクエストモデル
+# 리크에스트 모델
 class Message(BaseModel):
     role: str
     content: str
@@ -55,8 +57,8 @@ class ChatCompletionRequest(BaseModel):
 
 async def extract_and_store_tokens(user_message: str):
     """
-    ユーザーのメッセージ内に「I want information for the following tokens: X, Y」
-    が含まれていれば、そのトークン情報を Redis の "tokens" キーに保存する。
+    사용자 메시지에 'I want information for the following tokens: X, Y'가
+    포함되어 있다면, 해당 토큰 정보를 Redis의 "tokens" 키에 저장합니다.
     """
     match = re.search(r"I want information for the following tokens:\s*(.+)", user_message)
     if match:
@@ -66,7 +68,7 @@ async def extract_and_store_tokens(user_message: str):
 
 async def get_tokens_context(user_message: str) -> str:
     """
-    ユーザーのメッセージ内にトークン指定があれば、各トークンに対する Redis 上の検索結果を連結して返す。
+    릌요자의 메시지에 토큰 지정이 있으면, 각 토큰에 대한 Redis 상의 검색 결과를 연결하여 반환합니다.
     """
     match = re.search(r"I want information for the following tokens:\s*(.+)", user_message)
     if not match:
@@ -91,7 +93,7 @@ async def get_tokens_context(user_message: str) -> str:
 
 async def format_stream_response(content_stream: AsyncGenerator[str, None]) -> StreamingResponse:
     """
-    非同期ジェネレータの文字列を SSE ストリームレスポンスに変換する。
+    비동기 제네레이터의 문자열을 SSE 스트림 응답으로 변환합니다.
     """
     async def generator():
         async for chunk in content_stream:
@@ -109,7 +111,7 @@ async def format_stream_response(content_stream: AsyncGenerator[str, None]) -> S
 
 def format_response(content: str) -> dict:
     """
-    最終テキストを Chat Completion 風の JSON ペイロードに変換する。
+    최종 텍스트를 Chat Completion 형식의 JSON 페이로드로 변환합니다.
     """
     return {
         "object": "chat.completion",
@@ -128,8 +130,8 @@ async def generate_response(
     context: str = ""
 ) -> str:
     """
-    コンテキストとユーザーのクエリを含むプロンプトを Gemini に送信し、
-    補完結果を返す。
+    컨텍스트와 릌요자의 퀘리를 포함한 프롬프트를 Gemini에 보내고,
+    보완 결과를 반환합니다.
     """
     headers = {
         "Content-Type": "application/json"
@@ -175,14 +177,14 @@ async def chat_completion(request: ChatCompletionRequest):
     try:
         user_message = request.messages[-1].content
         
-        # 1) トークン情報の抽出と保存
+        # 1) 토큰 정보의 추출과 저장
         await extract_and_store_tokens(user_message)
         
-        # 2) Redis に保存されたトークン関連のコンテキストを取得
+        # 2) Redis에 저장된 토큰 관련 컨텍스트를 가져오기
         token_context = await get_tokens_context(user_message)
         print(f"[DEBUG] Token context: {token_context}")
 
-        # トークンデータがあれば、要約して返す
+        # 토큰 데이터가 있으면, 요약하여 반환하기
         if token_context.strip():
             summary_prompt = (
                 "You are a helpful AI assistant.\n\n"
@@ -210,7 +212,7 @@ async def chat_completion(request: ChatCompletionRequest):
                 )
                 return format_response(summarized_content)
 
-        # 3) オンライン検索は行わず、空のコンテキストで Gemini に問い合わせる
+        # 3) 온라인 검색은 수행하지 않고, 빈 컨텍스트로 Gemini에 질의하기
         search_results = ""
 
         if request.stream:

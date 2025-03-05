@@ -3,7 +3,7 @@ import { usePrivy } from '@privy-io/react-auth';
 
 const LoginButton = () => {
   const { login, logout, authenticated, user } = usePrivy();
-
+  
   return (
     <div className="relative w-full">
       {authenticated ? (

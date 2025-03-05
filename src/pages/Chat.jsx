@@ -7,15 +7,15 @@ import TypingIndicator from '../components/chat/TypingIndicator';
 import { v4 as uuidv4 } from 'uuid';
 import TagButton from '../components/layout/TagButton';
 
+
 export default function Chat() {
-  console.log('Chat component rendered');
+  //console.log('Chat component rendered');
   
   const [messages, setMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
   const [walletAddress, setWalletAddress] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [trendingWords, setTrendingWords] = useState([]); 
-
 
 
   const fetchTokensFromRedis = async () => {
@@ -41,7 +41,8 @@ export default function Chat() {
   }, []);
 
   const { data: portfolio, error, isLoading } = useTokenTransfers(walletAddress);
-
+  console.log('portfolio:', portfolio);
+  
   const mockAIResponses = {
     hello: "Hello! How can I assist you today?",
     default: "I see. Could you tell me more about that?",
@@ -49,9 +50,10 @@ export default function Chat() {
     thanks: "You're welcome! Do you have any other questions?",
     bye: "Goodbye! Have a great day!",
   };
-
-  const getAIResponse = (userMessage) => {
-    console.log('Getting AI response for message:', userMessage);
+  
+  const getAIResponse = async (userMessage) => {        // 여기가 ai의 응답을 받아오는 부분. 흐으음,,,
+    
+    //console.log('Getting AI response for message:', userMessage);
     const lowercaseMsg = userMessage.toLowerCase();
 
     if (lowercaseMsg.includes('hello') || lowercaseMsg.includes('hi')) {
@@ -64,16 +66,17 @@ export default function Chat() {
       return mockAIResponses.bye;
     }
     return mockAIResponses.default;
+    
   };
 
   const handleSendMessage = (message) => {
-    console.log('Handling new message:', message);
+    //console.log('Handling new message:', message);
     setMessages(prev => [...prev, { id: uuidv4(), content: message, role: 'user' }]);
 
     // Clear the search input after sending the message
     setSearchInput('');
-  
-    // ethers v6 の場合
+    console.log('message:', message);
+    // ethers v6 의 경우
     if (ethers.isAddress(message)) {
       console.log('Valid wallet address detected:', message);
       setWalletAddress(message); 
@@ -91,11 +94,11 @@ export default function Chat() {
       ]);
       return;
     }
-    // 通常のAIレスポンス
+    // 일반 AI 응답
     setIsTyping(true);
     setTimeout(() => {
       const aiResponse = getAIResponse(message);
-      console.log('AI response generated:', aiResponse);
+      //console.log('AI response generated:', aiResponse);
       setMessages(prev => [
         ...prev,
         {
@@ -109,7 +112,7 @@ export default function Chat() {
   };
 
   const fetchInvestmentAdvice = async (tokens) => {
-    console.log('Fetching investment advice for tokens:', tokens);
+    //console.log('Fetching investment advice for tokens:', tokens);
     try {
       const userMessage = `I want information for the following tokens: ${tokens.join(', ')}`;
       console.log('Sending request to investment advice API with message:', userMessage);
@@ -124,6 +127,8 @@ export default function Chat() {
           stream: false
         })
       });
+
+      console.log("Investment advice API response:", response);
       
       if (!response.ok) {
         console.error("API error response:", response.status, response.statusText);
@@ -190,6 +195,7 @@ export default function Chat() {
 
         if (allTokens.length > 0) {
           const advice = await fetchInvestmentAdvice(allTokens);
+          const tweet = await fetchTweet(allTokens);
           setMessages(prev => [
             ...prev,
             {
@@ -204,6 +210,27 @@ export default function Chat() {
     }
   }, [portfolio, isLoading, error]);
 
+  const fetchTweet = async (tokens) => {
+    const userMessage = `Todays Keywords! : ${tokens.join(', ')}`;
+
+    try {
+      const response = await fetch(`https://fresh-drinks-appear.loca.lt/agent/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          "connection": "twitter",
+          "action": "post-tweet",
+          "params": [userMessage]
+        })
+      });
+      console.log('response:', response);
+    } catch (err) {
+      console.error("Investment advice fetch error:", err);
+      return "Error fetching investment advice.";
+    }
+  };
+
+    
   useEffect(() => {
     if (error) {
       console.error('Portfolio data fetch error:', error);
@@ -219,17 +246,17 @@ export default function Chat() {
 
   return (
     <MainLayout>
-      {/* 全体の枠：Chrome風のヘッダー + 検索結果表示エリア */}
+      {/* 전체 프레임: Chrome 스타일 헤더 + 검색 결과 표시 영역 */}
       <div className="w-full flex flex-col h-[90vh] max-w-4xl mx-auto bg-gray-50 shadow-lg rounded-lg overflow-hidden">
-        {/* Chromeのアドレスバー風のヘッダー */}
+        {/* Chrome 주소창 스타일 헤더 */}
         <div className="bg-gray-200 border-b border-gray-300 p-2">
-          {/* 左側にある丸いボタン（戻る・進むボタン風） */}
+          {/* 왼쪽의 둥근 버튼들(뒤로가기/앞으로가기 버튼 스타일) */}
           <div className="flex space-x-2 mb-2">
             <div className="w-3 h-3 bg-red-500 rounded-full"></div>
             <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
             <div className="w-3 h-3 bg-green-500 rounded-full"></div>
           </div>
-          {/* "検索バー"としてのチャット入力 */}
+          {/* "검색창"으로서의 채팅 입력 */}
           <ChatInput
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
@@ -244,12 +271,12 @@ export default function Chat() {
 
         </div>
 
-        {/* メイン表示領域：検索結果表示エリア */}
+        {/* 메인 표시 영역: 검색 결과 표시 영역 */}
         <div className="flex-1 overflow-y-auto p-4 bg-white">
-          {/* タイピングインジケータ */}
+          {/* 타이핑 표시기 */}
           {isTyping && <TypingIndicator />}
 
-          {/* 検索結果リスト（assistantのメッセージのみ表示すると検索結果っぽくなる） */}
+          {/* 검색 결과 목록(assistant의 메시지만 표시하면 검색 결과처럼 보임) */}
           <div className="space-y-6">
             {messages
               .filter((msg) => msg.role === 'assistant')
@@ -265,8 +292,8 @@ export default function Chat() {
 }
 
 /**
- * 検索結果っぽいカードを表示するコンポーネント。
- * index（表示順）と content（本文）を受け取り、Google検索結果のようなレイアウトを簡易再現。
+ * 검색 결과와 같은 카드를 표시하는 컴포넌트.
+ * index(표시 순서)와 content(본문)를 받아 Google 검색 결과와 같은 레이아웃을 간단히 구현.
  */
 function SearchResultItem({ index, content }) {
   return (
