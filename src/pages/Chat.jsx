@@ -6,18 +6,18 @@ import ChatInput from '../components/chat/ChatInput';
 import TypingIndicator from '../components/chat/TypingIndicator';
 import { v4 as uuidv4 } from 'uuid';
 import TagButton from '../components/layout/TagButton';
-
+import { alloraTopics } from '../api/alloratopics';
 
 export default function Chat() {
   //console.log('Chat component rendered');
-  
   const [messages, setMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
   const [walletAddress, setWalletAddress] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [trendingWords, setTrendingWords] = useState([]); 
-
-
+  const [alloratopics, setAlloraTopics] = useState([]);
+  const serverUrl = import.meta.env.VITE_SERVER_URL;
+  
   const fetchTokensFromRedis = async () => {
     try {
       const response = await fetch('http://localhost:8000/redis/tokens');
@@ -38,10 +38,11 @@ export default function Chat() {
 
   useEffect(() => {
     fetchTokensFromRedis();
+    const filteredTopics = alloraTopics.filter((alloratopic) => alloratopic.topic_id < 6);
+    setAlloraTopics(filteredTopics);
   }, []);
 
   const { data: portfolio, error, isLoading } = useTokenTransfers(walletAddress);
-  console.log('portfolio:', portfolio);
   
   const mockAIResponses = {
     hello: "Hello! How can I assist you today?",
@@ -128,15 +129,12 @@ export default function Chat() {
         })
       });
 
-      console.log("Investment advice API response:", response);
-      
       if (!response.ok) {
         console.error("API error response:", response.status, response.statusText);
         return "Error fetching investment advice.";
       }
       
       const data = await response.json();
-      console.log("Investment advice API response:", data);
 
       const advice = data?.choices?.[0]?.message?.content;
       console.log("Extracted advice:", advice);
@@ -214,7 +212,7 @@ export default function Chat() {
     const userMessage = `Todays Keywords! : ${tokens.join(', ')}`;
 
     try {
-      const response = await fetch(`https://fresh-drinks-appear.loca.lt/agent/action`, {
+      const response = await fetch(`${serverUrl}/agent/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -230,6 +228,33 @@ export default function Chat() {
     }
   };
 
+  const handleInferenceClick = async (topic_id) => {
+    const message = await fetchAllora(topic_id);
+    setMessages(prev => [
+      ...prev,
+      { id: uuidv4(), content: message, role: 'assistant' }
+    ]);
+  };
+
+  const fetchAllora = async (topic_id) => {
+    try {
+      const response = await fetch(`${serverUrl}/agent/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          "connection": "allora",
+          "action": "get-inference",
+          "params": [(topic_id).toString()]
+        })
+      });
+      const data = await response.json();
+      const message = "Inference result: " + data?.result?.inference
+      return message;
+    } catch (err) {
+      console.error("allora inference fetch error:", err);
+      return "Error fetching allora inference.";
+    }
+  };
     
   useEffect(() => {
     if (error) {
@@ -242,7 +267,6 @@ export default function Chat() {
     }
   }, [error]);
 
-  console.log('Current component state:', { messages, isTyping, walletAddress });
 
   return (
     <MainLayout>
@@ -277,13 +301,27 @@ export default function Chat() {
           {isTyping && <TypingIndicator />}
 
           {/* 검색 결과 목록(assistant의 메시지만 표시하면 검색 결과처럼 보임) */}
-          <div className="space-y-6">
+          <div className="space-y-6 mb-32">
             {messages
               .filter((msg) => msg.role === 'assistant')
               .map((msg, idx) => (
                 <SearchResultItem key={msg.id} index={idx} content={msg.content} />
               ))
             }
+          </div>
+          
+          {/* 고정된 하단 영역 */}
+          <div className="fixed bottom-0 left-0 right-0 bg-white p-4 border-t border-gray-200 max-w-4xl mx-auto">
+            <div className="text-xl text-gray-500">Price Prediction Recommendation</div>
+            <div className="flex flex-wrap mt-2 space-x-2">
+              {alloratopics.map((alloratopic) => (
+                <TagButton 
+                  key={alloratopic.topic_id} 
+                  tag={alloratopic.topic_name} 
+                  onClick={() => handleInferenceClick(alloratopic.topic_id)} 
+                />
+              ))}
+            </div>
           </div>
         </div>
       </div>
