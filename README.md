@@ -1,6 +1,6 @@
 # Squarebox
 
-[Video](https://youtu.be/WiRYf0AiFkQ)  
+[Video](https://www.youtube.com/watch?v=61NxJMXml3E)  
 
 ## Oveview  
 Squarebox is a search engine platform that utilizes AI agents to analyze and recommend relevant content based on user search queries. Unlike conventional search engines, Squarebox is specifically designed for the Web3 ecosystem, enabling users to search for blockchain-related data, NFTs, and token trends.  
